@@ -1,24 +1,12 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { handleCreate, handleLogout } from '../../API';
+import { useNavigate, Link } from 'react-router-dom';
+import { handleLogout } from '../../API';
 
 function Header(){
-    const [user, setUser] = useState(null);
+    const user = JSON.parse(localStorage.getItem('user'));
     const navigate = useNavigate();
-    const location = useLocation();
-
-    useEffect(() => {
-        const storedUser = localStorage.getItem('user');
-        if(storedUser){
-            setUser(JSON.parse(storedUser));
-        }
-        else{
-            setUser(null);
-        }
-    }, [location])
 
     const handleOut= () => {
-        handleLogout(setUser, navigate);
+        handleLogout(navigate);
     }
 
     let headerContent;
