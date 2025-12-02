@@ -2,79 +2,30 @@ import express from 'express'
 import mysql from 'mysql'
 import cors from 'cors'
 import jwt from "jsonwebtoken";
-import bcrypt from "bcrypt";
+import dotenv from 'dotenv';
 
 const app = express();
+dotenv.config();
+
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({extended:true}));
 
-const SECRET_KEY = "12345";
-
 const db = mysql.createConnection({
     host: 'localhost',
     user: 'root',
-    password: 'Mysql-6045',
+    password: 'yourpassword',
     database: 'smart_home',
     port: 3307
 })
 
-// REGISTER USER
-app.post('/register', (req, res) => {
-    const {name, email, password} = req.body;
-
-    if(!name || !email || !password){
-        return res.json({Message: "All fields are required"});
+db.connect((err) => {
+    if(err){
+        console.log('MySQL connection failed: ', err);
     }
-
-    const checkSql = 'SELECT * FROM users WHERE email = (?)';
-    db.query(checkSql, [email], (err, result) => {
-        if(err) return res.json(err);
-        if(result.length > 0) return res.json({Message: "Email already registered"});
-
-        bcrypt.hash(password, 10, (err, hashedPassword) => {
-            if(err) return res.json(err);
-            
-            const sql = 'INSERT INTO users (name, email, password) VALUES (?, ?, ?)';
-            db.query(sql, [name, email, hashedPassword], (err2) => {
-                if(err2) return res.json(err2)
-                return res.json({Message: "Registration successful"});
-            })
-        });
-    })
-})
-
-// LOGIN USER
-app.post('/login', (req, res) => {
-    console.log("Login request body:", req.body);
-    const {email, password} = req.body;
-
-    if(!email || !password){
-        return res.json({Message: "Email and password required"});
+    else{
+        console.log('Connected to MySQL database successfully');
     }
-
-    const sql = 'SELECT * FROM users WHERE email = (?)'
-    db.query(sql, [email], (err, result) => {
-        if(err) return res.json(err)
-        if(result.length === 0) return res.json({Message: "Invalid credentials"})
-        
-        const user = result[0];
-        bcrypt.compare(password, user.password, (err, isPasswordValid) => {
-            if(err) return res.json(err)
-
-            if(!isPasswordValid){
-                return res.json({Message: "Invalid credentials"});
-            }
-
-            const token = jwt.sign({user_id: user.user_id, email: user.email}, SECRET_KEY, {expiresIn: "2h",});
-
-            res.json({
-                message: "Login successful",
-                token,
-                user: {id: user.id, name: user.name, email: user.email},
-            })
-        });
-    })
 })
 
 // Authenticate and Decode Token
@@ -83,11 +34,13 @@ function authenticateToken(req, res, next) {
     const token = authHeader && authHeader.split(" ")[1];
 
     if (!token){
-        return res.json({Message: "Access denied. No token provided."})
+        return res.status(401).json({Message: "Access denied. No token provided."})
     }
 
-    jwt.verify(token, SECRET_KEY, (err, decoded) => {
-        if(err) return res.json({ Message: "Invalid or expired token" })
+    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+        if(err){
+            return res.status(403).json({ Message: "Invalid or expired token" })
+        }
         req.user = decoded;
         next();
     })
