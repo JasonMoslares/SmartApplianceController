@@ -1,48 +1,41 @@
-import axios from "axios"
+import api from "./api";
 
-const getAuthHeaders = () => ({
-    headers: { Authorization: `Bearer ${localStorage.getItem("token")}`}
-})
+
+const AUTH_URL = process.env.REACT_APP_API_AUTH_URL || "http://localhost:4000";
+const APPL_URL = process.env.REACT_APP_API_APPL_URL || "http://localhost:5000";
 
 // Register
-export const handleRegister = (formData, nav) => {
-    axios.post('http://localhost:5000/register', formData)
-    .then(res => {console.log(res); alert(res.data.Message);
-        if(res.data.Message === "Registration successful"){
-            nav('/');
-        }
-    })
-    .catch(err => {console.log(err)})
+export const handleRegister = async (formData) => {
+    return api.post(`${AUTH_URL}/register`, formData)
+    .then(res => {console.log(res); return true;})
+    .catch(err => {console.log(err); return false;})
 }
 
 // Login
-export const handleLogin = (formData, nav) => {
-    axios.post('http://localhost:5000/login', formData)
+export const handleLogin = async (formData) => {
+    return api.post(`${AUTH_URL}/`, formData)
     .then(res => {console.log(res);
-        if(res.data.token){
-            localStorage.setItem("token", res.data.token);
+            localStorage.setItem("accessToken", res.data.accessToken);
+            localStorage.setItem("refreshToken", res.data.refreshToken);
             localStorage.setItem("user", JSON.stringify(res.data.user));
-
-            alert("Login successful!");
-            nav('/home');
-        }
-        else{
-            alert(res.data.Message || "Invalid credentials");
-        }
+            return true;
     })
-    .catch(err => {console.log(err)});
+    .catch(err => {console.log(err); return false});
 }
 
-export const handleLogout = (setVarName, nav) => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    setVarName(null);
-    nav('/')
+export const handleLogout = (nav) => {
+    api.delete(`${AUTH_URL}/logout`, {headers: {'x-refresh-token': localStorage.getItem('refreshToken')}})
+    .then(res => {console.log(res);
+                localStorage.removeItem("accessToken")
+                localStorage.removeItem("refreshToken")
+                localStorage.removeItem("user");
+                nav('/')})
+    .catch(err => {console.log(err)})
 }
 
 //Read All Appliance
 export const fetchData = (setVarName) => {
-    axios.get('http://localhost:5000/readAppliances', getAuthHeaders())
+    api.get(`${APPL_URL}/readAppliances`)
     .then(res => {console.log(res); setVarName(res.data)})
     .catch(err => {console.log(err)})
 }
@@ -50,14 +43,14 @@ export const fetchData = (setVarName) => {
 //Create Appliance
 export const handleCreate = (e, varName, nav) => {
     e.preventDefault();
-    axios.post('http://localhost:5000/addAppliance', varName, getAuthHeaders())
+    api.post(`${APPL_URL}/addAppliance`, varName)
     .then(res => {console.log(res); nav('/home')})
     .catch(err => {console.log(err)})
 }
 
 //Read Single Appliance
 export const handleRead = (id, setVarName) => {
-    axios.get(`http://localhost:5000/readAppliance/${id}`, getAuthHeaders())
+    api.get(`${APPL_URL}/readAppliance/${id}`)
     .then(res => {console.log(res); 
         if(res.data.length > 0){
             setVarName({appliance_name: res.data[0].appliance_name})}
@@ -67,7 +60,7 @@ export const handleRead = (id, setVarName) => {
 
 //Read Room
 export const handleReadRoom = (roomName, setVarName) => {
-    axios.get(`http://localhost:5000/readRoom/${roomName}`, getAuthHeaders())
+    api.get(`${APPL_URL}/readRoom/${roomName}`)
     .then(res => {console.log(res); 
         if(res.data.length > 0){
             setVarName({appliance_room: res.data[0].appliance_room})}
@@ -78,14 +71,14 @@ export const handleReadRoom = (roomName, setVarName) => {
 //Update Appliance Name and Room Assignment
 export const handleUpdate = (e, id, varName, nav) => {
     e.preventDefault();
-    axios.put(`http://localhost:5000/updateAppliance/${id}`, varName, getAuthHeaders())
+    api.put(`${APPL_URL}/updateAppliance/${id}`, varName)
     .then(res => {console.log(res); nav('/home')})
     .catch(err => {console.log(err)})
 }
 
 //Update Appliance State
 export const handleUpdateStatus = (id, varName) => {
-    axios.put(`http://localhost:5000/updateApplianceStatus/${id}`, varName, getAuthHeaders())
+    api.put(`${APPL_URL}/updateApplianceStatus/${id}`, varName)
     .then(res => {console.log(res)})
     .catch(err => {console.log(err)})
 }
@@ -94,21 +87,21 @@ export const handleUpdateStatus = (id, varName) => {
 //Update Room Name
 export const handleUpdateRoom = (e, oldRoomName, varName, nav) => {
     e.preventDefault();
-    axios.put(`http://localhost:5000/updateRoom/${oldRoomName}`, varName, getAuthHeaders())
+    api.put(`${APPL_URL}/updateRoom/${oldRoomName}`, varName)
     .then(res => {console.log(res); nav('/home')})
     .catch(err => {console.log(err)})
 }
 
 //Delete Appliance
 export const handleDelete = (id, nav) => {
-    axios.delete(`http://localhost:5000/deleteAppliance/${id}`, getAuthHeaders())
+    api.delete(`${APPL_URL}/deleteAppliance/${id}`)
     .then(res => {console.log(res); nav('/home')})
     .catch(err => {console.log(err)})
 }
 
 //Delete Room
 export const handleDeleteRoom = (roomName, nav) => {
-    axios.delete(`http://localhost:5000/deleteRoom/${roomName}`, getAuthHeaders())
+    api.delete(`${APPL_URL}/deleteRoom/${roomName}`)
     .then(res => {console.log(res); nav('/home')})
     .catch(err => {console.log(err)})
 
