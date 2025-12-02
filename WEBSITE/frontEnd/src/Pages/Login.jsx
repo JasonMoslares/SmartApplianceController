@@ -9,10 +9,25 @@ function Login(){
         password: ''
     })
 
+    const [errorMessage, setErrorMessage] = useState('');
+
+    const [form] = Form.useForm();
+
     const navigate = useNavigate();
 
-    const handleSubmit = () => {
-        handleLogin(values, navigate);
+    const handleSubmit = async () => {
+        try{
+            const success = await handleLogin(values);
+            if(success){
+                navigate('/home');
+            }
+            else{
+                setErrorMessage('Invalid credentials');
+            }
+        }
+        catch(error){
+            setErrorMessage('Server error: ', error);
+        }
     }
 
     return(
@@ -21,7 +36,7 @@ function Login(){
                 <div className="user-info-form-header">
                     <h2>Log In</h2>
                 </div>
-                <Form layout='vertical' onFinish={handleSubmit}>
+                <Form form={form} layout='vertical' onFinish={handleSubmit}>
                     <Form.Item
                         label="Email Address"
                         name="email"
@@ -38,6 +53,15 @@ function Login(){
                                     value={values.password}
                                     onChange={(e) => setValues({...values, password: e.target.value})} />
                     </Form.Item>
+
+                    {errorMessage && (
+                        <Form.Item>
+                            <div className="error-message">
+                                <h4>{errorMessage}</h4>
+                            </div>
+                        </Form.Item>
+                    )}
+
                     <button type="submit" className="loginButton">Log In</button>
 
                     <div className="register-link">
