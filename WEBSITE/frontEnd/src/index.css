@@ -234,6 +234,11 @@
   transform: scale(0.70);
 }
 
+.error-message h4{
+  color: red;
+  text-align: center;
+}
+
 .editButton, .addApplianceButton{
   display: inline-flex;
   align-items: center;
