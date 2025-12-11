@@ -12,7 +12,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({extended: false}));
 
-const db = mysql.createConnection({
+const db = await mysql.createConnection({
     host: 'localhost',
     user: 'root',
     password: 'yourpassword',
