@@ -10,10 +10,25 @@ function Register(){
         password: ''
     })
 
+    const [errorMessage, setErrorMessage] = useState('');
+
+    const [form] = Form.useForm();
+
     const navigate = useNavigate();
 
-    const handleSubmit = () => {
-        handleRegister(values, navigate);
+    const handleSubmit = async () => {
+        try{
+            const success = await handleRegister(values);
+            if(success){
+                navigate('/home');
+            }
+            else{
+                setErrorMessage('User already exists');
+            }
+        }
+        catch(error){
+            setErrorMessage('Server error: ', error);
+        }
     }
 
     return(
@@ -22,7 +37,7 @@ function Register(){
                 <div className="user-info-form-header">
                     <h2>Register</h2>
                 </div>
-                <Form layout='vertical' onFinish={handleSubmit}>
+                <Form form={form} layout='vertical' onFinish={handleSubmit}>
                     <Form.Item
                         label="Name"
                         name="name"
@@ -52,6 +67,16 @@ function Register(){
                                     onChange={(e) => setValues({...values, password: e.target.value})} />
                     </Form.Item>
                     <button type="submit" className="registerButton">Register</button>
+
+                    {errorMessage && (
+                        <Form.Item>
+                            <div className="error-message">
+                                <h4>{errorMessage}</h4>
+                            </div>
+                        </Form.Item>
+                    )} 
+
+
                     <div className="login-link">
                         <p>
                             Already have an account?{" "}

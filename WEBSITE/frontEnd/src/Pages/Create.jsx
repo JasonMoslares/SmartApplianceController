@@ -7,9 +7,19 @@ function Create(){
     const [values, setValues] = useState({appliance_id: '', appliance_room: ''})
     const navigate = useNavigate();
 
-    const createAppliance = (e) => {
-        handleCreate(e, values, navigate);
-    }
+    const [errorMessage, setErrorMessage] = useState('');
+
+    const [form] = Form.useForm();
+
+    const handleSubmit = async (values) => {
+        const result = await handleCreate(values);
+
+        if (result.startsWith("Successfully added")) {
+            navigate('/home');
+        } else {
+            setErrorMessage(result);
+        }
+    };
 
     const cancelCreate = () => {
         navigate('/home');
@@ -21,7 +31,7 @@ function Create(){
                 <div className="appliance-info-form-header">
                     <h2>Add Appliance</h2>
                 </div>
-                <Form layout='vertical'>
+                <Form form={form} layout='vertical' onFinish={handleSubmit}>
                     <Form.Item
                         label="Appliance ID"
                         name="appliance_id"
@@ -38,8 +48,17 @@ function Create(){
                                     value={values.appliance_room}
                                     onChange={(e) => setValues({...values, appliance_room: e.target.value})} />
                     </Form.Item>
+
+                    {errorMessage && (
+                        <Form.Item>
+                            <div className="error-message">
+                                <h4>{errorMessage}</h4>
+                            </div>
+                        </Form.Item>
+                    )}
+
                     <div className="button-group">
-                        <button type="button" className="createButton" onClick={createAppliance}>Create</button>
+                        <button type="submit" className="createButton">Create</button>
                         <button type="button" className="cancelButton" onClick={cancelCreate}>Cancel</button>
                     </div>
                 </Form>

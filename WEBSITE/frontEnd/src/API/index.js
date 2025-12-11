@@ -41,11 +41,14 @@ export const fetchData = (setVarName) => {
 }
 
 //Create Appliance
-export const handleCreate = (e, varName, nav) => {
-    e.preventDefault();
-    api.post(`${APPL_URL}/addAppliance`, varName)
-    .then(res => {console.log(res); nav('/home')})
-    .catch(err => {console.log(err)})
+export const handleCreate = (varName) => {
+    return api.post(`${APPL_URL}/addAppliance`, varName)
+    .then(res => {console.log(res); return res.data.Message;})
+    .catch(err => {console.log(err); 
+                    if(err.response && err.response.data && err.response.data.Message){
+                        return err.response.data.Message;
+                    }
+                    return "Server error";})
 }
 
 //Read Single Appliance
