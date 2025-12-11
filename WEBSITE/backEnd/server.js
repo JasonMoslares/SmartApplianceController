@@ -1,5 +1,5 @@
 import express from 'express'
-import mysql from 'mysql'
+import mysql from 'mysql2/promise'
 import cors from 'cors'
 import jwt from "jsonwebtoken";
 import dotenv from 'dotenv';
@@ -11,7 +11,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({extended:true}));
 
-const db = mysql.createConnection({
+const db = await mysql.createConnection({
     host: 'localhost',
     user: 'root',
     password: 'yourpassword',
@@ -19,14 +19,7 @@ const db = mysql.createConnection({
     port: 3307
 })
 
-db.connect((err) => {
-    if(err){
-        console.log('MySQL connection failed: ', err);
-    }
-    else{
-        console.log('Connected to MySQL database successfully');
-    }
-})
+console.log('Connected to MySQL database successfully');
 
 // Authenticate and Decode Token
 function authenticateToken(req, res, next) {
@@ -47,158 +40,173 @@ function authenticateToken(req, res, next) {
 }
 
 // READ ALL
-app.get('/readAppliances', authenticateToken, (req, res) => {
-    const user_id = req.user.user_id;
+app.get('/readAppliances', authenticateToken, async (req, res) => {
+    try{
+        const {user_id} = req.user;
 
-    const sql = 'SELECT a.*, d.appliance_type FROM appliances a JOIN device_catalog d ON a.appliance_id = d.appliance_id WHERE a.user_id = (?)';
-    db.query(sql, [user_id], (err, result) => {
-        if(err) return res.json(err)
-        return res.json(result)
-    })
+        const [result] = await db.execute('SELECT a.*, d.appliance_type FROM appliances a JOIN device_catalog d ON a.appliance_id = d.appliance_id WHERE a.user_id = ?', [user_id]);
+        return res.json(result);
+    }
+    catch(err){
+        console.log('Read All Error: ', err);
+        return res.status(500).json({Message: 'Server error', error: err.message})
+    }
 })
 
 // CREATE
-app.post('/addAppliance', authenticateToken, (req, res) => {
-    const user_id = req.user.user_id;
-    const {appliance_id, appliance_room} = req.body;
-    
-    const checkSql = 'SELECT appliance_type FROM device_catalog WHERE appliance_id = (?)';
-    db.query(checkSql, [appliance_id], (err,catalogResult) => {
-        if(err) return res.json(err)
-        if(catalogResult.length === 0) return res.json({Message: "Invalid appliance id"})
-    
-        const deviceType = catalogResult[0].appliance_type;
-        let appliance_name = "";
-        let appliance_img = "";
-        let appliance_status = "off";
+app.post('/addAppliance', authenticateToken, async (req, res) => {
+    try{
+        const {user_id} = req.user;
+        const {appliance_id, appliance_room} = req.body;
 
-        if(deviceType === "light"){
-            appliance_name = "Smart Light";
-            appliance_img = "https://cdn-icons-png.flaticon.com/512/4575/4575390.png";
+        const [ownershipResult] = await db.execute('SELECT * FROM appliances WHERE appliance_id = ?', [appliance_id]);
+        if(ownershipResult.length > 0 && ownershipResult[0].user_id !== user_id){
+            return res.status(400).json({Message: "This appliance is already registed to another account"});
         }
-        else if(deviceType === "speaker"){
-            appliance_name = "Smart Speaker";
-            appliance_img = "https://cdn-icons-png.flaticon.com/512/4827/4827791.png";
-        }
-        else if(deviceType === "motor"){
-            appliance_name = "Smart Fan";
-            appliance_img = "https://cdn-icons-png.flaticon.com/512/3060/3060734.png";
-        }
-        else {
-            appliance_name = "Smart Appliance";
-            appliance_img = "https://cdn-icons-png.flaticon.com/512/1857/1857064.png";
-        }
+        else{
+            const [catalogResult] = await db.execute('SELECT appliance_type FROM device_catalog WHERE appliance_id = ?', [appliance_id]);
+            if(catalogResult.length === 0){
+                return res.status(400).json({Message: "Invalid appliance id"});
+            }
+            else{
+                const deviceType = catalogResult[0].appliance_type;
+                let appliance_name = "";
+                let appliance_img = "";
 
-        const checkOwnership = 'SELECT * FROM appliances WHERE appliance_id = (?)';
-        db.query(checkOwnership, [appliance_id], (err2, ownershipResult) => {
-            if(err2) return res.json(err2)
-            if(ownershipResult.length > 0) return res.json({Message: "This appliance is already registed to another account"})
-    
-            const insertSql = 'INSERT INTO appliances (user_id, appliance_id, appliance_name, appliance_img, appliance_room, appliance_status) VALUES (?, ?, ?, ?, ?, ?)';
-            db.query(insertSql, [user_id, appliance_id, appliance_name, appliance_img, appliance_room, appliance_status], (err3) => {
-                if(err3) return res.json(err3)
+                if(deviceType === "light"){
+                    appliance_name = "Smart Light";
+                    appliance_img = "https://cdn-icons-png.flaticon.com/512/4575/4575390.png";
+                }
+                else if(deviceType === "speaker"){
+                    appliance_name = "Smart Speaker";
+                    appliance_img = "https://cdn-icons-png.flaticon.com/512/4827/4827791.png";
+                }
+                else if(deviceType === "motor"){
+                    appliance_name = "Smart Fan";
+                    appliance_img = "https://cdn-icons-png.flaticon.com/512/3060/3060734.png";
+                }
+                else {
+                    appliance_name = "Smart Appliance";
+                    appliance_img = "https://cdn-icons-png.flaticon.com/512/1857/1857064.png";
+                }
+
+                const [insertResult] = await db.execute('INSERT INTO appliances (user_id, appliance_id, appliance_name, appliance_img, appliance_room) VALUES (?, ?, ?, ?, ?)', [user_id, appliance_id, appliance_name, appliance_img, appliance_room]);
                 return res.json({Message: `Successfully added ${appliance_name} in ${appliance_room}`});
-            })
-        })
-    })  
+            }
+        }
+    }
+    catch(err){
+        console.log('Enroll Appliance Error: ', err);
+        return res.status(500).json({Message: 'Server error', error: err.message})
+    }
 })
 
 // READ SINGLE
-app.get('/readAppliance/:id', authenticateToken, (req, res) => {
-    const user_id = req.user.user_id;
-    const appliance_id = req.params.id;
+app.get('/readAppliance/:appliance_id', authenticateToken, async (req, res) => {
+    try{
+        const {user_id} = req.user;
+        const {appliance_id} = req.params;
 
-    const sql = 'SELECT * FROM appliances WHERE appliance_id = (?) AND user_id = (?)';
-    db.query(sql, [appliance_id, user_id], (err, result) => {
-        if(err) return res.json(err)
-        return res.json(result)
-    })
+        const [result] = await db.execute('SELECT * FROM appliances WHERE appliance_id = ? AND user_id = ?', [appliance_id, user_id]);
+        return res.json(result);
+    }
+    catch(err){
+        console.log('Read Single Error: ', err);
+        return res.status(500).json({Message: 'Server error', error: err.message})
+    }
 })
 
 // READ ROOM
-app.get('/readRoom/:roomName', authenticateToken, (req, res) => {
-    const user_id = req.user.user_id;
-    const {roomName} = req.params;
+app.get('/readRoom/:roomName', authenticateToken, async (req, res) => {
+    try{
+        const {user_id} = req.user;
+        const {roomName} = req.params;
 
-    const sql = 'SELECT * FROM appliances WHERE appliance_room = (?) AND user_id = (?)';
-    db.query(sql, [roomName, user_id], (err, result) => {
-        if(err) return res.json(err)
-        return res.json(result)
-    })
+        const [result] = await db.execute('SELECT * FROM appliances WHERE appliance_room = ? AND user_id = ?', [roomName, user_id]);
+        return res.json(result);
+    }
+    catch(err){
+        console.log('Read Room Error: ', err);
+        return res.status(500).json({Message: 'Server error', error: err.message})
+    }
 })
 
 // UPDATE
-app.put('/updateAppliance/:id', authenticateToken, (req, res) => {
-    const user_id = req.user.user_id;
-    const appliance_id = req.params.id;
-    const {appliance_name, appliance_room} = req.body;
+app.put('/updateAppliance/:appliance_id', authenticateToken, async (req, res) => {
+    try{
+        const {user_id} = req.user;
+        const {appliance_id} = req.params;
+        const {appliance_name, appliance_room} = req.body;
 
-    const sql = 'UPDATE appliances SET appliance_name = (?), appliance_room = (?) WHERE appliance_id = (?) AND user_id = (?)';
-    db.query(sql, [appliance_name, appliance_room, appliance_id, user_id], (err, result) => {
-        if(err) return res.json(err)
-        return res.json(result)
-    })
+        const [result] = await db.execute('UPDATE appliances SET appliance_name = ?, appliance_room = ? WHERE appliance_id = ? AND user_id = ?', [appliance_name, appliance_room, appliance_id, user_id]);
+        return res.json(result);
+    }
+    catch(err){
+        console.log('Update Appliance Error: ', err);
+        return res.status(500).json({Message: 'Server error', error: err.message})
+    }
 })
 
 // UPDATE ROOM NAME
-app.put('/updateRoom/:oldRoomName', authenticateToken, (req, res) => {
-    const user_id = req.user.user_id;
-    const {oldRoomName} = req.params;
-    const {appliance_room} = req.body;
+app.put('/updateRoom/:oldRoomName', authenticateToken, async (req, res) => {
+    try{
+        const {user_id} = req.user;
+        const {oldRoomName} = req.params;
+        const {appliance_room} = req.body;
 
-    const sql = 'UPDATE appliances SET appliance_room = (?) WHERE appliance_room = (?) AND user_id = (?)';
-    db.query(sql, [appliance_room, oldRoomName, user_id,], (err, result) => {
-        if(err) return res.json(err)
-        return res.json(result)
-    })
+        const [result] = await db.execute('UPDATE appliances SET appliance_room = ? WHERE appliance_room = ? AND user_id = ?', [appliance_room, oldRoomName, user_id]);
+        return res.json(result);
+    }
+    catch(err){
+        console.log('Update Room Name Error: ', err);
+        return res.status(500).json({Message: 'Server error', error: err.message})
+    }
 })
 
 // UPDATE APPLIANCE STATUS
-app.put('/updateApplianceStatus/:id', authenticateToken, (req, res) => {
-    const user_id = req.user.user_id;
-    const appliance_id = req.params.id;
-    const {appliance_status} = req.body;
+app.put('/updateApplianceStatus/:appliance_id', authenticateToken, async (req, res) => {
+    try{
+        const {user_id} = req.user;
+        const {appliance_id} = req.params;
+        const {appliance_status} = req.body;
 
-    const sql = 'UPDATE appliances SET appliance_status = (?) WHERE appliance_id = (?) AND user_id = (?)';
-    db.query(sql, [appliance_status, appliance_id, user_id], (err, result) => {
-        if(err) return res.json(err)
-        return res.json(result)
-    })
+        const [result] = await db.execute('UPDATE appliances SET appliance_status = ? WHERE appliance_id = ? AND user_id = ?', [appliance_status, appliance_id, user_id]);
+        return res.json(result);
+    }
+    catch(err){
+        console.log('Update Appliance Status Error: ', err);
+        return res.status(500).json({Message: 'Server error', error: err.message})
+    }
 })
 
 // DELETE
-app.delete('/deleteAppliance/:id', authenticateToken, (req, res) => {
-    const user_id = req.user.user_id;
-    const appliance_id = req.params.id;
+app.delete('/deleteAppliance/:appliance_id', authenticateToken, async (req, res) => {
+    try{
+        const {user_id} = req.user;
+        const {appliance_id} = req.params;
 
-    const sql = 'DELETE FROM appliances WHERE appliance_id = (?) AND user_id = (?)';
-    db.query(sql, [appliance_id, user_id], (err, result) => {
-        if(err) return res.json(err)
+        const [result] = await db.execute('DELETE FROM appliances WHERE appliance_id = ? AND user_id = ?', [appliance_id, user_id]);
         return res.json(result)
-    })
+    }
+    catch(err){
+        console.log('Delete Appliance Error: ', err);
+        return res.status(500).json({Message: 'Server error', error: err.message})
+    }
 })
 
 // DELETE ROOM
-app.delete('/deleteRoom/:roomName', authenticateToken, (req, res) => {
-    const user_id = req.user.user_id;
-    const {roomName} = req.params;
+app.delete('/deleteRoom/:roomName', authenticateToken, async (req, res) => {
+    try{
+        const {user_id} = req.user;
+        const {roomName} = req.params;
 
-    const sql = 'DELETE FROM appliances WHERE appliance_room = (?) AND user_id = (?)';
-    db.query(sql, [roomName, user_id,], (err, result) => {
-        if(err) return res.json(err)
-        return res.json(result)
-    })
-})
-
-// SEND VALUE TO ESP32
-app.get('/getApplianceStatus', authenticateToken, (req, res) => {
-    const user_id = req.user.user_id;
-
-    const sql = 'SELECT appliance_id, appliance_status FROM appliances WHERE user_id = (?)';
-    db.query(sql, [user_id], (err, result) => {
-        if(err) return res.json(err)
-        return res.json(result)
-    })
+        const [result] = await db.execute('DELETE FROM appliances WHERE appliance_room = ? AND user_id = ?', [roomName, user_id]);
+        return res.json(result);
+    }
+    catch(err){
+        console.log('Delete Room Error: ', err);
+        return res.status(500).json({Message: 'Server error', error: err.message})
+    }
 })
 
 app.listen(5000, () => {

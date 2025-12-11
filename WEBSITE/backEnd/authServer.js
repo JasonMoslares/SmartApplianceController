@@ -1,7 +1,7 @@
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
-import mysql from 'mysql'
+import mysql from 'mysql2/promise'
 import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
 
@@ -20,162 +20,128 @@ const db = mysql.createConnection({
     port: 3307
 })
 
-db.connect((err) => {
-    if(err){
-        console.log('MySQL connection failed: ', err);
-    }
-    else{
-        console.log('Connected to MySQL database successfully');
-    }
-})
+console.log('Connected to MySQL database successfully');
 
 // REGISTER
-app.post('/register', (req, res) => {
-    const {name, email, password} = req.body;
-    
-    if(!name || !email || !password){
-        return res.status(401).json({Message: 'All fields are required'});
+app.post('/register', async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+    if (!name || !email || !password) {
+      return res.status(401).json({ Message: 'All fields required' });
     }
 
-    try{
-        const checkSql = 'SELECT * FROM users WHERE email = (?)';
-        db.query(checkSql, [email], async (err, result) => {
-            if(err){
-                return res.status(500).json({Message: 'DB error: ', error: err})
-            }
-
-            if(result.length > 0){
-                return res.status(401).json({Message: 'User already exist'});
-            }
-            else{
-                const hashedPassword = await bcrypt.hash(password, 10);
-
-                const insertSql = 'INSERT INTO users (name, email, password) VALUES (?, ?, ?)';
-
-                db.query(insertSql, [name, email, hashedPassword], (err2) => {
-                    if(err2){
-                        return res.status(500).json({Message: 'DB error: ', error: err2})
-                    }
-
-                    res.status(201).json({Message: 'Registration successful'});
-                })
-            }
-        })
+    const [result] = await db.execute('SELECT * FROM users WHERE email = ?', [email]);
+    if (result.length > 0) {
+      return res.status(401).json({ Message: 'User already exists' });
     }
-    catch(error){
-        return res.status(500).json({Message: 'Server error: ', error: error});
-    }
-})
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    await db.execute('INSERT INTO users (name, email, password) VALUES (?, ?, ?)', [name, email, hashedPassword]);
+
+    res.status(201).json({ Message: 'Registration successful' });
+  } 
+  catch (err) {
+    console.error('Registration error:', err);
+    res.status(500).json({ Message: 'Server error', error: err.message });
+  }
+});
 
 // LOGIN
-app.post('/', (req, res) => {
-    const {email, password} = req.body;
+app.post('/', async (req, res) => {
+    try {
+        const {email, password} = req.body;
 
-    if(!email || !password){
-        return res.status(401).json({Message: 'All fields are required'});
+        if(!email || !password){
+            return res.status(401).json({Message: 'All fields are required'});
+        }
+
+        const [result] = await db.execute('SELECT * FROM users WHERE email = ?', [email]);
+        if(result.length === 0){
+            return res.status(401).json({Message: 'User does not exist'});
+        }
+
+        const user = result[0];
+        const isValid = await bcrypt.compare(password, user.password);
+        if(!isValid){
+            return res.status(403).json({Message: 'Invalid credentials'});
+        }
+        else{
+            const accessToken = generateAccessToken(user);
+            const refreshToken = jwt.sign({email: user.email}, process.env.REFRESH_TOKEN_SECRET);
+
+            await db.execute('UPDATE users SET refreshToken = ? WHERE email = ?', [refreshToken, user.email]);
+            return res.json({Message: 'Login successful',
+                        user: {name: user.name,
+                        email: user.email,
+                        user_id: user.user_id},
+                        accessToken,
+                        refreshToken
+                        })
+        }
     }
-
-    try{
-        const checkSql = 'SELECT * FROM users WHERE email = (?)';
-        db.query(checkSql, [email], async (err, result) => {
-            if(err){
-                return res.status(500).json({Message: 'DB error: ', error: err});
-            }
-
-            if(result.length === 0){
-                return res.status(401).json({Message: 'User does not exist'});
-            }
-
-            else{
-                const user = result[0];
-                if(await bcrypt.compare(password, user.password)){
-                    const accessToken = generateAccessToken(user);
-                    const refreshToken = jwt.sign({email: user.email}, process.env.REFRESH_TOKEN_SECRET);
-
-                    const saveTokenSql = 'UPDATE users SET refreshToken = (?) WHERE email = (?)';
-                    db.query(saveTokenSql, [refreshToken, user.email], (err2) => {
-                        if(err2){
-                            return res.status(500).json({Message: 'DB error: ', error: err2});
-                        }
-
-                        return res.json({
-                                    Message: 'Login successful',
-                                    user: {name: user.name,
-                                        email: user.email,
-                                        user_id: user.user_id},
-                                    accessToken,
-                                    refreshToken
-                                    })
-                    })
-                }
-                else{
-                    return res.status(403).json({Message: 'Invalid credentials'});
-                }
-            }
-        })
-    }
-    catch(error){
-        return res.status(500).json({Message: 'Server error: ', error: error})
+    catch(err){
+        console.error('Login error:', err);
+        res.status(500).json({ Message: 'Server error', error: err.message });
     }
 })
 
 // REFRESH TOKEN
-app.post('/token', (req, res) => {
-    const refreshToken = req.headers['x-refresh-token'];
-    if(!refreshToken){
-        return res.status(403).json({Message: 'Token is missing'});
-    }
-
-    const checkSql = 'SELECT * FROM users WHERE refreshToken = (?)';
-    db.query(checkSql, [refreshToken], (err, result) => {
-        if(err){
-            return res.status(500).json({Message: 'DB error: ', error: err});
-        }
-
-        if(result.length === 0){
+app.post('/token', async (req, res) => {
+    try{
+        const refreshToken = req.headers['x-refresh-token'];
+        if(!refreshToken){
             return res.status(403).json({Message: 'Token is missing'});
         }
 
-        const user = result[0];
+        const [result] = await db.execute('SELECT * FROM users WHERE refreshToken = ?', [refreshToken]);
+        if(result.length === 0){
+            return res.status(403).json({Message: 'Token is missing'});
+        }
+        else{
+            const user = result[0];
 
-        jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET, (err2, decoded) => {
-            if(err2){
-                return res.status(403).json({Message: 'Invalid token'});
-            }
-
+            const decoded = await new Promise((resolve, reject) => {
+                jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET, (err, decoded) => {
+                    if(err){
+                        reject(err);
+                    }
+                    else{
+                        resolve(decoded);
+                    }
+                })  
+            })
             const accessToken = generateAccessToken(user);
-            return res.status(200).json({accessToken});
-        })
-    })
+            return res.status(200).json({ accessToken });
+        }
+    }
+    catch(err){
+        console.error('Refresh token error:', err);
+        res.status(500).json({ Message: 'Server error', error: err.message });
+    }
 })
 
 //LOGOUT
-app.delete('/logout', (req, res) => {
-    const refreshToken = req.headers['x-refresh-token'];
-    if(!refreshToken){
-        return res.status(403).json({Message: 'Token is missing'});
-    }
-
-    const checkSql = 'SELECT * FROM users WHERE refreshToken = (?)';
-    db.query(checkSql, [refreshToken], (err, result) => {
-        if(err){
-            return res.status(500).json({Message: 'DB error: ', error: err});
-        }
-
-        if(result.length === 0){
+app.delete('/logout', async (req, res) => {
+    try{
+        const refreshToken = req.headers['x-refresh-token'];
+        if(!refreshToken){
             return res.status(403).json({Message: 'Token is missing'});
         }
 
-        const clearTokenSql = 'UPDATE users SET refreshToken = NULL WHERE refreshToken = (?)';
-        db.query(clearTokenSql, [refreshToken], (err2) => {
-            if(err2){
-                return res.status(500).json({Message: 'DB error: ', error: err2});
-            }
-
+        const [result] = await db.execute('SELECT * FROM users WHERE refreshToken = ?', [refreshToken]);
+        if(result.length === 0){
+            return res.status(403).json({Message: 'Token is missing'});
+        }
+        else{
+            await db.execute('UPDATE users SET refreshToken = NULL WHERE refreshToken = ?', [refreshToken]);
             return res.status(200).json({Message: 'Logout successful'});
-        })
-    })
-
+        }
+    }
+    catch (err) {
+        console.log('Logout error:', err);
+        return res.status(500).json({ Message: 'Server error', error: err.message })
+    }
 })
 
 function generateAccessToken(user){
