@@ -1,5 +1,29 @@
 🏠 Smart Appliance Controller
 
+URL: https://smarthome-frontend-04ix.onrender.com
+
+Contact me:
+
+jasonraym8@gmail.com
+
+so that I can run web services.
+
+You can make an account or LOG IN with this credentials:
+
+Email: jason@email.com
+
+Pass: 1234
+
+Here are the list of appliances that can be added:
+
+Light: L001, L002, L003
+
+Fan: M001, M002, M003
+
+Speaker: S001, S002, S003
+
+\*DISCLAIMER: I'm using free tier of Render, and Avien MySQL, please be patient with the website.
+
 This Smart Appliance Controller gives users the ability to control their respective smart appliances through this web application.
 
 📦 Prerequisites
